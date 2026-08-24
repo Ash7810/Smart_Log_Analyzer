@@ -4,6 +4,9 @@ import time
 import os
 
 def run_app():
+    port = int(os.environ.get("PORT", "8000"))
+    host = os.environ.get("HOST", "0.0.0.0")
+
     print("=" * 60)
     print("Starting LogPulse Security Log Analyzer")
     print("=" * 60)
@@ -14,13 +17,12 @@ def run_app():
         "uvicorn",
         "backend.main:app",
         "--host",
-        "127.0.0.1",
+        host,
         "--port",
-        "8000",
-        "--reload"
+        str(port),
     ]
 
-    print("\n>> Launching Modern Web App on http://127.0.0.1:8000 ...")
+    print(f"\n>> Launching LogPulse on http://{host}:{port} ...")
     proc = subprocess.Popen(cmd, cwd=os.path.dirname(os.path.abspath(__file__)))
 
     time.sleep(2)
