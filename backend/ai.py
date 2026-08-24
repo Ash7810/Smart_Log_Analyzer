@@ -110,3 +110,89 @@ Log Entry Details:
     fallback_rc = rule_remediations.get(detector_rule, "1. Verify host IP identity.\n2. Review adjacent log events.\n3. Revoke access if suspicious.")
 
     return fallback_exp, fallback_rc
+
+def validate_single_log_entry(
+    entry_id: int,
+    timestamp: str,
+    source: str,
+    event_type: str,
+    severity: str,
+    status: Optional[int],
+    raw_message: str,
+    is_flagged: bool,
+    detector_rule: Optional[str] = None
+) -> dict:
+    """
+    On-demand AI validation and state analysis for ANY log entry (normal or flagged).
+    Provides plain-English security assessment, risk rating, state confirmation, and operational advice.
+    """
+    client = get_gemini_client()
+    
+    status_str = f"HTTP {status}" if status else "N/A"
+    flag_desc = f"Flagged by rule: {detector_rule}" if is_flagged else "Evaluated as Normal (unflagged)"
+
+    prompt = f"""You are a senior SecOps and Site Reliability Engineer analyzing a specific log record.
+Evaluate this log entry's state and security posture:
+- ID: #{entry_id}
+- Timestamp: {timestamp}
+- Host/IP: {source}
+- Endpoint/Method: {event_type}
+- Severity: {severity.upper()}
+- HTTP Status: {status_str}
+- System Rule Engine Verdict: {flag_desc}
+- Raw Log Message: {raw_message}
+
+Provide a comprehensive review in JSON format matching this schema:
+{{
+  "verdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS" | "ERROR",
+  "confidence": "HIGH" | "MEDIUM" | "LOW",
+  "summary": "2-sentence plain-English summary of what this specific log indicates.",
+  "state_analysis": "Detailed breakdown of the host state, protocol behavior, and status code significance.",
+  "security_advice": "Specific operational recommendation or verification step for the engineering team."
+}}
+"""
+
+    candidate_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    if client:
+        for model_name in candidate_models:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.2,
+                        response_mime_type="application/json"
+                    )
+                )
+                data = json.loads(response.text.strip())
+                return {
+                    "entry_id": entry_id,
+                    "verdict": data.get("verdict", "SUSPICIOUS" if is_flagged else "SAFE"),
+                    "confidence": data.get("confidence", "HIGH"),
+                    "summary": data.get("summary", "Log entry evaluated."),
+                    "state_analysis": data.get("state_analysis", "Normal operational event."),
+                    "security_advice": data.get("security_advice", "No action required.")
+                }
+            except Exception:
+                continue
+
+    # Graceful fallback logic
+    verdict = "MALICIOUS" if is_flagged and detector_rule == "burst_frequency" else ("ERROR" if severity in ["error", "critical"] or (status and status >= 500) else ("SUSPICIOUS" if is_flagged else "SAFE"))
+    
+    if is_flagged:
+        summary = f"Log #{entry_id} triggered rule '{detector_rule}'. Originating from {source}, this represents non-standard activity on endpoint '{event_type}'."
+        state_analysis = f"Source host {source} generated activity matching '{detector_rule}'. HTTP status {status_str} and severity '{severity}' were observed."
+        advice = "Isolate host traffic, verify whether this operation was authorized, and inspect preceding session logs."
+    else:
+        summary = f"Log #{entry_id} represents standard legitimate traffic with no rule violations."
+        state_analysis = f"Host {source} executed '{event_type}' resulting in {status_str} with '{severity}' severity. Request patterns are within expected baseline."
+        advice = "Normal operational baseline. Routine log retention applies."
+
+    return {
+        "entry_id": entry_id,
+        "verdict": verdict,
+        "confidence": "HIGH",
+        "summary": summary,
+        "state_analysis": state_analysis,
+        "security_advice": advice
+    }

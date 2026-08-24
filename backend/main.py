@@ -345,3 +345,38 @@ def explain_all_flagged(force_refresh: bool = False, db: Session = Depends(get_d
 
     db.commit()
     return {"status": "success", "generated_count": count_generated, "total_flagged": len(flagged_list)}
+
+from backend.ai import validate_single_log_entry
+
+@app.get("/api/ai/review-log/{log_id}")
+def review_any_log_with_ai(log_id: int, db: Session = Depends(get_db)):
+    """
+    On-demand AI validation and state inspection for ANY log entry (normal or flagged).
+    """
+    entry = db.query(LogEntry).options(joinedload(LogEntry.flagged_entry)).filter(LogEntry.id == log_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Log entry not found")
+
+    is_flagged = entry.flagged_entry is not None
+    rule = entry.flagged_entry.detector_rule if is_flagged else None
+    ts_str = entry.timestamp.strftime("%Y-%m-%d %H:%M:%S") if entry.timestamp else str(entry.raw_timestamp)
+
+    review = validate_single_log_entry(
+        entry_id=entry.raw_id or entry.id,
+        timestamp=ts_str,
+        source=entry.source or "unknown",
+        event_type=entry.event_type or "unknown",
+        severity=entry.severity or "info",
+        status=entry.status,
+        raw_message=entry.raw_message or "",
+        is_flagged=is_flagged,
+        detector_rule=rule
+    )
+
+    return {
+        "log_id": entry.id,
+        "raw_id": entry.raw_id,
+        "is_flagged": is_flagged,
+        "detector_rule": rule,
+        "review": review
+    }

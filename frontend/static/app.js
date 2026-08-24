@@ -333,8 +333,11 @@ function renderLogsTable() {
                 <td><code>${log.status || 'N/A'}</code></td>
                 <td><span class="badge ${badgeClass}">${statusText}</span></td>
                 <td style="max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px;" title="${log.raw_message}">${log.raw_message}</td>
-                <td style="text-align: right;">
-                    ${isAnomaly ? `<button class="btn btn-secondary" style="padding: 3px 8px; font-size: 11px;" onclick="inspectAnomaly(${log.flagged.id})">Inspect</button>` : ''}
+                <td style="text-align: right; white-space: nowrap;">
+                    <button class="btn btn-secondary" style="padding: 3px 7px; font-size: 11px;" onclick="reviewLogWithAi(${log.id})" title="AI State Review">
+                        <i data-lucide="sparkles" style="width: 12px; height: 12px; color: var(--accent-blue);"></i> AI Review
+                    </button>
+                    ${isAnomaly ? `<button class="btn btn-secondary" style="padding: 3px 8px; font-size: 11px; margin-left: 4px;" onclick="inspectAnomaly(${log.flagged.id})">Inspect</button>` : ''}
                 </td>
             </tr>
         `;
@@ -850,6 +853,89 @@ async function refreshSingleAiExplanation(flaggedId) {
     } catch (err) {
         showToast(err.message, 'error');
     }
+}
+
+async function reviewLogWithAi(logId) {
+    const modal = document.getElementById('aiLogReviewModal');
+    const titleEl = document.getElementById('aiModalTitle');
+    const subEl = document.getElementById('aiModalSubtitle');
+    const contentEl = document.getElementById('aiModalContent');
+
+    const targetLog = state.logs.find(l => l.id === logId);
+    const rawId = targetLog ? (targetLog.raw_id || targetLog.id) : logId;
+
+    titleEl.innerText = `AI State Assessment for Log #${rawId}`;
+    subEl.innerText = `Querying Gemini AI for security validation & state analysis...`;
+    contentEl.innerHTML = `
+        <div style="padding: 40px 20px; text-align: center;">
+            <div class="loader-spinner" style="margin: 0 auto 14px auto;"></div>
+            <p style="font-size: 13px; color: var(--text-muted);">Evaluating host state, HTTP status, and traffic baseline...</p>
+        </div>
+    `;
+    modal.style.display = 'flex';
+    lucide.createIcons();
+
+    try {
+        const res = await fetch(`/api/ai/review-log/${logId}`).then(r => r.json());
+        const rev = res.review || {};
+
+        let verdictColor = '#16a34a';
+        let verdictBg = '#dcfce7';
+        if (rev.verdict === 'MALICIOUS' || rev.verdict === 'ERROR') {
+            verdictColor = '#dc2626';
+            verdictBg = '#fee2e2';
+        } else if (rev.verdict === 'SUSPICIOUS') {
+            verdictColor = '#ea580c';
+            verdictBg = '#ffedd5';
+        }
+
+        subEl.innerText = `Timestamp: ${targetLog ? targetLog.timestamp : 'N/A'} • Source: ${targetLog ? targetLog.source : 'N/A'}`;
+        contentEl.innerHTML = `
+            <div style="display: flex; gap: 8px; margin-bottom: 14px; align-items: center;">
+                <span style="background: ${verdictBg}; color: ${verdictColor}; padding: 4px 10px; border-radius: 4px; font-weight: 700; font-size: 12px;">
+                    VERDICT: ${rev.verdict}
+                </span>
+                <span style="background: var(--bg-subtle); color: var(--text-main); padding: 4px 8px; border-radius: 4px; font-weight: 600; font-size: 11px;">
+                    CONFIDENCE: ${rev.confidence}
+                </span>
+                ${res.is_flagged ? `<span class="badge badge-anomaly">${res.detector_rule}</span>` : `<span class="badge badge-normal">NORMAL BASELINE</span>`}
+            </div>
+
+            <!-- Summary Box -->
+            <div class="ai-box ai-box-blue" style="margin-bottom: 12px; padding: 12px 14px;">
+                <div class="ai-badge">
+                    <i data-lucide="sparkles"></i>
+                    <span>AI Event Evaluation</span>
+                </div>
+                <p class="ai-text" style="font-size: 12.5px;">${rev.summary}</p>
+            </div>
+
+            <!-- State Analysis -->
+            <div style="background: var(--bg-subtle); padding: 12px 14px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 12.5px; border: 1px solid var(--border);">
+                <div style="font-weight: 600; color: var(--text-main); margin-bottom: 4px; font-size: 12px;">
+                    🔍 Host Protocol & State Analysis:
+                </div>
+                <div style="color: var(--text-muted); line-height: 1.5;">${rev.state_analysis}</div>
+            </div>
+
+            <!-- Operational Advice -->
+            <div class="ai-box ai-box-green" style="padding: 12px 14px;">
+                <div class="ai-badge">
+                    <i data-lucide="shield-check"></i>
+                    <span>Recommended Action / SecOps Advice</span>
+                </div>
+                <p class="ai-text" style="font-size: 12.5px;">${rev.security_advice}</p>
+            </div>
+        `;
+        lucide.createIcons();
+    } catch (err) {
+        contentEl.innerHTML = `<div style="padding: 20px; color: var(--accent-red); font-size: 13px;">Error fetching AI review: ${err.message}</div>`;
+    }
+}
+
+function closeAiLogModal() {
+    const modal = document.getElementById('aiLogReviewModal');
+    if (modal) modal.style.display = 'none';
 }
 
 function showToast(msg, type = 'info') {
