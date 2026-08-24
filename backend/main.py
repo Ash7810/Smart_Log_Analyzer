@@ -160,7 +160,7 @@ def get_logs(
     only_invalid: bool = False,
     severity: Optional[str] = None,
     rule: Optional[str] = None,
-    limit: int = 5000,
+    limit: int = 50000,
     offset: int = 0,
     db: Session = Depends(get_db)
 ):
@@ -176,7 +176,10 @@ def get_logs(
         query = query.filter(LogEntry.severity == severity.lower())
 
     total_count = query.count()
-    entries = query.order_by(LogEntry.id.asc()).offset(offset).limit(limit).all()
+    if limit > 0:
+        entries = query.order_by(LogEntry.id.asc()).offset(offset).limit(limit).all()
+    else:
+        entries = query.order_by(LogEntry.id.asc()).all()
 
     results = []
     for entry in entries:

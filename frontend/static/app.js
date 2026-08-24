@@ -158,26 +158,42 @@ function renderValidationDrawer() {
 /* =========================================================================
    1. TIME-SERIES INCIDENT HEATMAP & HISTOGRAM
    ========================================================================= */
+function safeDateParse(tsStr) {
+    if (!tsStr) return 0;
+    // Replace space with 'T' if standard ISO format
+    let clean = String(tsStr).trim();
+    let d = new Date(clean);
+    if (!isNaN(d.getTime())) return d.getTime();
+    d = new Date(clean.replace(' ', 'T'));
+    if (!isNaN(d.getTime())) return d.getTime();
+    return 0;
+}
+
 function renderHeatmap() {
     const container = document.getElementById('timelineBarsContainer');
     const axis = document.getElementById('timelineAxisContainer');
     if (!container || !axis) return;
     
-    const validLogs = state.logs.filter(l => l.timestamp && l.is_valid);
+    const validLogs = (state.logs || []).filter(l => l.timestamp && l.is_valid);
     if (validLogs.length === 0) {
-        container.innerHTML = `<div style="width:100%; text-align:center; color:var(--text-light); font-size:12px; line-height:50px;">No time-series data available</div>`;
+        container.innerHTML = `<div style="width:100%; text-align:center; color:var(--text-light); font-size:12px; line-height:60px;">No time-series data available</div>`;
         axis.innerHTML = '';
         return;
     }
 
-    // Sort by timestamp
-    const sorted = [...validLogs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    const startTime = new Date(sorted[0].timestamp).getTime();
-    const endTime = new Date(sorted[sorted.length - 1].timestamp).getTime();
-    
-    const duration = Math.max(1, endTime - startTime);
-    const BUCKETS = 36; // 36 vertical histogram bars
-    const bucketDuration = duration / BUCKETS;
+    const logTimes = validLogs.map(l => ({ log: l, t: safeDateParse(l.timestamp) })).filter(item => item.t > 0);
+    if (logTimes.length === 0) {
+        container.innerHTML = `<div style="width:100%; text-align:center; color:var(--text-light); font-size:12px; line-height:60px;">Timestamp formatting not recognized</div>`;
+        axis.innerHTML = '';
+        return;
+    }
+
+    logTimes.sort((a, b) => a.t - b.t);
+    const startTime = logTimes[0].t;
+    const endTime = logTimes[logTimes.length - 1].t;
+    const duration = Math.max(1000, endTime - startTime);
+    const BUCKETS = 36;
+    const bucketDuration = Math.max(1, duration / BUCKETS);
 
     const buckets = Array.from({ length: BUCKETS }, (_, i) => ({
         index: i,
@@ -188,13 +204,12 @@ function renderHeatmap() {
         total: 0
     }));
 
-    sorted.forEach(log => {
-        const t = new Date(log.timestamp).getTime();
-        let bIdx = Math.floor((t - startTime) / bucketDuration);
+    logTimes.forEach(item => {
+        let bIdx = Math.floor((item.t - startTime) / bucketDuration);
         if (bIdx >= BUCKETS) bIdx = BUCKETS - 1;
         if (bIdx < 0) bIdx = 0;
 
-        if (log.is_flagged) {
+        if (item.log.is_flagged) {
             buckets[bIdx].anomalyCount++;
         } else {
             buckets[bIdx].normalCount++;
@@ -205,13 +220,13 @@ function renderHeatmap() {
     const maxCount = Math.max(1, ...buckets.map(b => b.total));
 
     container.innerHTML = buckets.map(b => {
-        const heightPct = Math.max(8, (b.total / maxCount) * 100);
+        const heightPct = b.total > 0 ? Math.max(14, (b.total / maxCount) * 100) : 4;
         const anomalyPct = b.total > 0 ? (b.anomalyCount / b.total) * 100 : 0;
         const normalPct = 100 - anomalyPct;
 
-        const startStr = new Date(b.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const endStr = new Date(b.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const tooltip = `${startStr} - ${endStr}: ${b.total} events (${b.anomalyCount} anomalies, ${b.normalCount} normal)`;
+        const startStr = new Date(b.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const endStr = new Date(b.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const tooltip = `${startStr} - ${endStr} (${b.total} events: ${b.anomalyCount} anomalies, ${b.normalCount} normal)`;
 
         return `
             <div class="timeline-bar-col" 
@@ -224,9 +239,9 @@ function renderHeatmap() {
         `;
     }).join('');
 
-    const startLabel = new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const startLabel = new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const midLabel = new Date(startTime + duration / 2).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const endLabel = new Date(endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const endLabel = new Date(endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     axis.innerHTML = `
         <span>${startLabel}</span>
