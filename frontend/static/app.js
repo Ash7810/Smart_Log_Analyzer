@@ -675,18 +675,48 @@ ${item.ai_root_cause || 'N/A'}
     showToast(`Exported incident brief for #${item.raw_id}!`, 'success');
 }
 
-async function handleFileUpload(file) {
-    const formData = new FormData();
-    formData.append('file', file);
+function showLoader(title = "Processing CSV Ingestion...", subtitle = "Parsing records, validating timestamps, and executing deterministic anomaly detection.") {
+    const loader = document.getElementById('globalLoader');
+    const titleEl = document.getElementById('loaderTitle');
+    const subEl = document.getElementById('loaderSubtitle');
+    if (titleEl) titleEl.innerText = title;
+    if (subEl) subEl.innerText = subtitle;
+    if (loader) loader.style.display = 'flex';
+}
 
-    showToast(`Uploading and validating ${file.name}...`, 'info');
+function hideLoader() {
+    const loader = document.getElementById('globalLoader');
+    if (loader) loader.style.display = 'none';
+}
+
+async function handleFileUpload(file) {
+    const uploadBtn = document.getElementById('btnUploadTrigger');
+    const fileInput = document.getElementById('fileInput');
+    
+    showLoader(
+        `Ingesting & Validating ${file.name}...`,
+        "Parsing CSV rows, validating ISO timestamps, indexing hosts, and running deterministic anomaly detectors."
+    );
+    showToast(`Uploading ${file.name}...`, 'info');
+
+    if (uploadBtn) {
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Processing...`;
+        lucide.createIcons();
+    }
+
     try {
+        const formData = new FormData();
+        formData.append('file', file);
+
         const response = await fetch('/api/ingest', { method: 'POST', body: formData });
         const res = await response.json();
+        
         if (response.ok && res.status === 'success') {
             const valid = res.summary.valid_rows || 0;
             const flagged = res.summary.flagged_rows || 0;
-            showToast(`Ingested ${valid.toLocaleString()} rows (${flagged} anomalies detected)!`, 'success');
+            const rejected = res.summary.rejected_rows || 0;
+            showToast(`Successfully ingested ${valid.toLocaleString()} rows (${flagged} anomalies, ${rejected} rejected)!`, 'success');
             await fetchDashboardData();
             switchView('logs');
         } else {
@@ -694,33 +724,72 @@ async function handleFileUpload(file) {
         }
     } catch (err) {
         showToast('Upload failed: ' + err.message, 'error');
+    } finally {
+        hideLoader();
+        if (fileInput) fileInput.value = '';
+        if (uploadBtn) {
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = `<i data-lucide="upload"></i> Upload CSV`;
+            lucide.createIcons();
+        }
     }
 }
 
 async function loadDefaultDataset() {
+    const defaultBtn = document.getElementById('btnDefaultData');
+    
+    showLoader(
+        "Loading Default Dataset (logs.csv)...",
+        "Validating 257 sample log records, filtering schema rejections, and calculating ground-truth anomaly scores."
+    );
     showToast('Loading logs.csv...', 'info');
+
+    if (defaultBtn) {
+        defaultBtn.disabled = true;
+        defaultBtn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Ingesting...`;
+        lucide.createIcons();
+    }
+
     try {
         const fileRes = await fetch('/api/ingest-default', { method: 'POST' }).then(r => r.json());
         if (fileRes.status === 'success') {
-            showToast('Loaded 255 valid entries & detected 35 anomalies!', 'success');
-            fetchDashboardData();
+            const valid = fileRes.summary.valid_rows || 0;
+            const flagged = fileRes.summary.flagged_rows || 0;
+            showToast(`Loaded ${valid} valid entries & detected ${flagged} anomalies!`, 'success');
+            await fetchDashboardData();
+            switchView('logs');
         } else {
             showToast(fileRes.detail || 'Could not load default file', 'error');
         }
     } catch (err) {
         showToast(err.message, 'error');
+    } finally {
+        hideLoader();
+        if (defaultBtn) {
+            defaultBtn.disabled = false;
+            defaultBtn.innerHTML = `<i data-lucide="database"></i> Load Default`;
+            lucide.createIcons();
+        }
     }
 }
 
 async function clearDatabase() {
     if (!confirm('Are you sure you want to clear all data?')) return;
+    
+    showLoader(
+        "Resetting Database...",
+        "Truncating log tables, clearing flagged incident records, and purging validation audit summaries."
+    );
+
     try {
         await fetch('/api/clear', { method: 'POST' }).then(r => r.json());
         showToast('Database reset successfully', 'success');
         state.selectedAnomaly = null;
-        fetchDashboardData();
+        await fetchDashboardData();
     } catch (err) {
         showToast(err.message, 'error');
+    } finally {
+        hideLoader();
     }
 }
 

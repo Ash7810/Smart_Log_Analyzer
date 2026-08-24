@@ -335,6 +335,18 @@
         </main>
     </div>
 
+    <!-- Global Processing Loader Modal Overlay -->
+    <div class="loader-overlay" id="globalLoader" style="display: none;">
+        <div class="loader-modal">
+            <div class="loader-spinner"></div>
+            <h3 id="loaderTitle">Processing CSV Ingestion...</h3>
+            <p id="loaderSubtitle">Parsing records, validating timestamps, and executing deterministic anomaly detection.</p>
+            <div class="loader-progress-bar">
+                <div class="loader-progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Notification Toasts -->
     <div class="toast-container" id="toastContainer"></div>
 
