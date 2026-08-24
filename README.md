@@ -77,9 +77,9 @@ flowchart TD
 
 | Feature | Description |
 | :--- | :--- |
-| 📊 **Time-Series Incident Heatmap** | Interactive 36-bucket timeline histogram above the log stream showing baseline traffic vs. anomaly spikes. Clicking any time slice dynamically filters the table. |
+| 📊 **Time-Series Traffic & Incident Spike Timeline** | Interactive 36-bucket timeline histogram above the log stream showing baseline traffic vs. anomaly spikes with interactive time-slice filtering. |
 | 🔍 **Contextual Neighbor Logs ($\pm 5$)** | Inspect the 5 logs immediately before and after an anomaly with a live toggle between **Same Host IP Only** (for session reconstruction) and **All Hosts**. |
-| 🎛️ **Live Parameter Threshold Tuner** | Dynamic sliders for burst request limits, sliding window seconds, custom off-hours ranges, and restricted URIs with instant live re-scanning. |
+| 📋 **SecOps Overview Dashboard** | System architecture highlights, structured 3-step triage workflow, and detailed rule specifications. |
 | 🛡️ **IP Threat Aggregation Matrix** | Composite threat risk scoring ($0-100$) grouping all host IPs by anomaly density, multi-detector violations, and subnet classification. |
 | 🔒 **MITRE ATT&CK Mapping** | Automatically classifies detected incidents into MITRE ATT&CK tactics & techniques (e.g. `T1110`, `T1078`, `T1499`, `T1059`). |
 | 🌐 **IP Origin Classification** | Automatically classifies host IP addresses into Loopback, Internal Corporate LAN (RFC 1918), Documentation Subnet, or External Public WAN. |

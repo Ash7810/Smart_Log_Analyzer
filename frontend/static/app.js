@@ -3,11 +3,20 @@ let state = {
     summary: null,
     logs: [],
     flagged: [],
+    threats: [],
     selectedAnomaly: null,
     activeView: 'logs',
     filterText: '',
     filterSeverity: 'all',
-    filterStatus: 'all'
+    filterStatus: 'all',
+    threatFilterText: '',
+    heatmapSlice: null, // [startTime, endTime] for time filtering
+    neighborLogs: {
+        targetId: null,
+        sameHost: true,
+        window: 5,
+        items: []
+    }
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
-    // 2-View Tab Switching (List View & Incident Detail View)
+    // 4-View Tab Switching (Dashboard/Overview, Logs & Timeline, IP Threats, Investigation)
     document.querySelectorAll('.view-tab').forEach(btn => {
         btn.addEventListener('click', () => switchView(btn.getAttribute('data-view')));
     });
@@ -49,6 +58,26 @@ function setupEventListeners() {
         renderLogsTable();
     });
 
+    // IP Threat Search
+    const threatSearch = document.getElementById('threatSearchInput');
+    if (threatSearch) {
+        threatSearch.addEventListener('input', (e) => {
+            state.threatFilterText = e.target.value.toLowerCase();
+            renderThreatMatrix();
+        });
+    }
+
+    // Heatmap Reset
+    const resetHeatmapBtn = document.getElementById('btnResetHeatmapFilter');
+    if (resetHeatmapBtn) {
+        resetHeatmapBtn.addEventListener('click', () => {
+            state.heatmapSlice = null;
+            document.querySelectorAll('.timeline-bar-col').forEach(el => el.classList.remove('active-slice'));
+            renderLogsTable();
+            showToast('Timeline filter reset', 'info');
+        });
+    }
+
     // Validation Drawer Toggle
     document.getElementById('drawerToggle').addEventListener('click', () => {
         document.getElementById('drawerContent').classList.toggle('open');
@@ -63,24 +92,31 @@ function switchView(viewId) {
     document.querySelectorAll('.view-panel').forEach(panel => {
         panel.classList.toggle('active', panel.id === `view-${viewId}`);
     });
+    if (viewId === 'threats') {
+        renderThreatMatrix();
+    }
     lucide.createIcons();
 }
 
 async function fetchDashboardData() {
     try {
-        const [summaryRes, logsRes, flaggedRes] = await Promise.all([
+        const [summaryRes, logsRes, flaggedRes, threatsRes] = await Promise.all([
             fetch('/api/summary').then(r => r.json()),
             fetch('/api/logs?limit=50000').then(r => r.json()),
-            fetch('/api/flagged').then(r => r.json())
+            fetch('/api/flagged').then(r => r.json()),
+            fetch('/api/threats/ips').then(r => r.json()).catch(() => ({ items: [] }))
         ]);
 
         state.summary = summaryRes;
         state.logs = logsRes.items || [];
         state.flagged = flaggedRes.items || [];
+        state.threats = threatsRes.items || [];
 
         renderMetricBar();
         renderValidationDrawer();
+        renderHeatmap();
         renderLogsTable();
+        renderThreatMatrix();
         renderIncidentInspector();
         lucide.createIcons();
     } catch (err) {
@@ -119,6 +155,100 @@ function renderValidationDrawer() {
     }
 }
 
+/* =========================================================================
+   1. TIME-SERIES INCIDENT HEATMAP & HISTOGRAM
+   ========================================================================= */
+function renderHeatmap() {
+    const container = document.getElementById('timelineBarsContainer');
+    const axis = document.getElementById('timelineAxisContainer');
+    if (!container || !axis) return;
+    
+    const validLogs = state.logs.filter(l => l.timestamp && l.is_valid);
+    if (validLogs.length === 0) {
+        container.innerHTML = `<div style="width:100%; text-align:center; color:var(--text-light); font-size:12px; line-height:50px;">No time-series data available</div>`;
+        axis.innerHTML = '';
+        return;
+    }
+
+    // Sort by timestamp
+    const sorted = [...validLogs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const startTime = new Date(sorted[0].timestamp).getTime();
+    const endTime = new Date(sorted[sorted.length - 1].timestamp).getTime();
+    
+    const duration = Math.max(1, endTime - startTime);
+    const BUCKETS = 36; // 36 vertical histogram bars
+    const bucketDuration = duration / BUCKETS;
+
+    const buckets = Array.from({ length: BUCKETS }, (_, i) => ({
+        index: i,
+        start: startTime + i * bucketDuration,
+        end: startTime + (i + 1) * bucketDuration,
+        normalCount: 0,
+        anomalyCount: 0,
+        total: 0
+    }));
+
+    sorted.forEach(log => {
+        const t = new Date(log.timestamp).getTime();
+        let bIdx = Math.floor((t - startTime) / bucketDuration);
+        if (bIdx >= BUCKETS) bIdx = BUCKETS - 1;
+        if (bIdx < 0) bIdx = 0;
+
+        if (log.is_flagged) {
+            buckets[bIdx].anomalyCount++;
+        } else {
+            buckets[bIdx].normalCount++;
+        }
+        buckets[bIdx].total++;
+    });
+
+    const maxCount = Math.max(1, ...buckets.map(b => b.total));
+
+    container.innerHTML = buckets.map(b => {
+        const heightPct = Math.max(8, (b.total / maxCount) * 100);
+        const anomalyPct = b.total > 0 ? (b.anomalyCount / b.total) * 100 : 0;
+        const normalPct = 100 - anomalyPct;
+
+        const startStr = new Date(b.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const endStr = new Date(b.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const tooltip = `${startStr} - ${endStr}: ${b.total} events (${b.anomalyCount} anomalies, ${b.normalCount} normal)`;
+
+        return `
+            <div class="timeline-bar-col" 
+                 style="height: ${heightPct}%;" 
+                 title="${tooltip}" 
+                 onclick="filterByHeatmapBucket(${b.start}, ${b.end}, this)">
+                <div class="bar-segment-normal" style="height: ${normalPct}%;"></div>
+                ${b.anomalyCount > 0 ? `<div class="bar-segment-anomaly" style="height: ${anomalyPct}%;"></div>` : ''}
+            </div>
+        `;
+    }).join('');
+
+    const startLabel = new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const midLabel = new Date(startTime + duration / 2).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const endLabel = new Date(endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    axis.innerHTML = `
+        <span>${startLabel}</span>
+        <span>${midLabel}</span>
+        <span>${endLabel}</span>
+    `;
+}
+
+function filterByHeatmapBucket(startMs, endMs, el) {
+    document.querySelectorAll('.timeline-bar-col').forEach(bar => bar.classList.remove('active-slice'));
+    if (el) el.classList.add('active-slice');
+    
+    state.heatmapSlice = [startMs, endMs];
+    const sDate = new Date(startMs).toLocaleTimeString();
+    const eDate = new Date(endMs).toLocaleTimeString();
+    showToast(`Filtered logs to slice: ${sDate} - ${eDate}`, 'info');
+    renderLogsTable();
+}
+
+/* =========================================================================
+   2. ALL LOGS TABLE
+   ========================================================================= */
 function renderLogsTable() {
     const tbody = document.getElementById('logsTableBody');
     if (!state.logs || state.logs.length === 0) {
@@ -144,6 +274,14 @@ function renderLogsTable() {
         if (state.filterStatus === 'flagged' && !log.is_flagged) return false;
         if (state.filterStatus === 'normal' && (log.is_flagged || !log.is_valid)) return false;
         if (state.filterStatus === 'invalid' && log.is_valid) return false;
+
+        // Heatmap Time Slice Filter
+        if (state.heatmapSlice && log.timestamp) {
+            const logT = new Date(log.timestamp).getTime();
+            if (logT < state.heatmapSlice[0] || logT > state.heatmapSlice[1]) {
+                return false;
+            }
+        }
         return true;
     });
 
@@ -153,7 +291,7 @@ function renderLogsTable() {
                 <td colspan="9" class="empty-state">
                     <i data-lucide="search-x"></i>
                     <h3>No Matching Logs Found</h3>
-                    <p>Try adjusting your search query or filters.</p>
+                    <p>Try adjusting your search query, filters, or resetting the timeline filter.</p>
                 </td>
             </tr>
         `;
@@ -185,6 +323,103 @@ function renderLogsTable() {
     lucide.createIcons();
 }
 
+/* =========================================================================
+   3. IP THREAT AGGREGATION & RISK MATRIX
+   ========================================================================= */
+function renderThreatMatrix() {
+    const grid = document.getElementById('threatCardsGrid');
+    if (!grid) return;
+    if (!state.threats || state.threats.length === 0) {
+        grid.innerHTML = `
+            <div style="grid-column: 1/-1;" class="empty-state">
+                <i data-lucide="shield-check"></i>
+                <h3>No Threat Intelligence Available</h3>
+                <p>Ingest a dataset to aggregate source host risk statistics.</p>
+            </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+
+    const filtered = state.threats.filter(t => {
+        if (!state.threatFilterText) return true;
+        return t.source.toLowerCase().includes(state.threatFilterText) ||
+               t.ip_origin.toLowerCase().includes(state.threatFilterText) ||
+               t.threat_level.toLowerCase().includes(state.threatFilterText);
+    });
+
+    grid.innerHTML = filtered.map(t => {
+        const level = t.threat_level.toLowerCase();
+        let barColor = '#16a34a';
+        if (level === 'critical') barColor = '#dc2626';
+        else if (level === 'high') barColor = '#ea580c';
+        else if (level === 'medium') barColor = '#d97706';
+
+        const rulesBadges = t.triggered_rules.map(r => {
+            return `<span class="badge" style="background:#fee2e2; color:#991b1b; font-size:10px;">${r}</span>`;
+        }).join(' ') || '<span style="font-size:11px; color:var(--text-light);">No anomaly rules triggered</span>';
+
+        return `
+            <div class="threat-card">
+                <div class="threat-card-top">
+                    <div>
+                        <div class="threat-ip-title">${t.source}</div>
+                        <div class="threat-origin-label">${t.ip_origin}</div>
+                    </div>
+                    <span class="threat-badge ${level}">${t.threat_level} (${t.composite_score}/100)</span>
+                </div>
+
+                <div class="threat-score-bar-bg">
+                    <div class="threat-score-bar-fill" style="width: ${t.composite_score}%; background: ${barColor};"></div>
+                </div>
+
+                <div class="threat-stats-row">
+                    <div class="threat-stat-item">
+                        <div class="threat-stat-label">Total Logs</div>
+                        <div class="threat-stat-value">${t.total_requests}</div>
+                    </div>
+                    <div class="threat-stat-item">
+                        <div class="threat-stat-label">Anomalies</div>
+                        <div class="threat-stat-value text-red">${t.flagged_entries}</div>
+                    </div>
+                    <div class="threat-stat-item">
+                        <div class="threat-stat-label">5xx / Errors</div>
+                        <div class="threat-stat-value text-amber">${t.error_requests}</div>
+                    </div>
+                    <div class="threat-stat-item">
+                        <div class="threat-stat-label">Endpoints</div>
+                        <div class="threat-stat-value">${t.distinct_endpoints}</div>
+                    </div>
+                </div>
+
+                <div>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600; text-transform: uppercase;">Violations Triggered:</div>
+                    <div class="threat-rules-tags">${rulesBadges}</div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border);">
+                    <span style="font-size: 11px; color: var(--text-light);">First Seen: ${t.first_seen ? t.first_seen.split(' ')[1] : 'N/A'}</span>
+                    <button class="btn btn-secondary" style="padding: 3px 8px; font-size: 11px;" onclick="filterLogsByIp('${t.source}')">
+                        <i data-lucide="filter"></i> View Logs
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    lucide.createIcons();
+}
+
+function filterLogsByIp(ip) {
+    state.filterText = ip.toLowerCase();
+    document.getElementById('searchInput').value = ip;
+    switchView('logs');
+    renderLogsTable();
+    showToast(`Filtered logs stream for IP: ${ip}`, 'info');
+}
+
+/* =========================================================================
+   4. INCIDENT INVESTIGATION & CONTEXTUAL NEIGHBOR LOGS
+   ========================================================================= */
 function renderIncidentInspector() {
     const listContainer = document.getElementById('incidentItemsList');
     document.getElementById('incidentListCount').innerText = state.flagged.length;
@@ -230,11 +465,91 @@ function selectIncidentById(flaggedId) {
     state.selectedAnomaly = item;
     renderIncidentInspector();
     renderIncidentDetail(item);
+    fetchNeighborLogs(item.log_entry_id || item.id, true);
 }
 
 function inspectAnomaly(flaggedId) {
     switchView('investigate');
     selectIncidentById(flaggedId);
+}
+
+async function fetchNeighborLogs(logEntryId, sameHost = true) {
+    try {
+        const res = await fetch(`/api/logs/neighbors/${logEntryId}?window=5&same_host=${sameHost}`).then(r => r.json());
+        state.neighborLogs = {
+            targetId: logEntryId,
+            sameHost: sameHost,
+            window: 5,
+            items: res.items || []
+        };
+        renderNeighborLogsTable();
+    } catch (err) {
+        console.error('Failed to fetch neighbor logs', err);
+    }
+}
+
+function toggleNeighborHostFilter() {
+    if (!state.selectedAnomaly) return;
+    const currentSameHost = state.neighborLogs.sameHost;
+    const newSameHost = !currentSameHost;
+    fetchNeighborLogs(state.selectedAnomaly.log_entry_id || state.selectedAnomaly.id, newSameHost);
+}
+
+function renderNeighborLogsTable() {
+    const container = document.getElementById('neighborLogsContainer');
+    if (!container) return;
+
+    const items = state.neighborLogs.items || [];
+    const sameHost = state.neighborLogs.sameHost;
+
+    container.innerHTML = `
+        <div class="neighbor-logs-section">
+            <div class="neighbor-header">
+                <h4>
+                    <i data-lucide="git-commit"></i>
+                    Contextual Preceding & Subsequent Logs (&plusmn;5 Events)
+                </h4>
+                <button class="btn btn-secondary" style="font-size: 11px; padding: 3px 8px;" onclick="toggleNeighborHostFilter()">
+                    ${sameHost ? 'Showing: Same Host Only (Click for All Hosts)' : 'Showing: All Hosts (Click for Same Host)'}
+                </button>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="neighbor-table">
+                    <thead>
+                        <tr>
+                            <th>Position</th>
+                            <th>ID</th>
+                            <th>Timestamp</th>
+                            <th>Source</th>
+                            <th>Endpoint</th>
+                            <th>Severity</th>
+                            <th>HTTP</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${items.map(log => {
+                            const isTarget = log.is_target;
+                            const posLabel = isTarget ? '🚨 TARGET EVENT' : (log.id < state.neighborLogs.targetId ? 'Preceding' : 'Subsequent');
+                            return `
+                                <tr class="${isTarget ? 'neighbor-row-target' : 'neighbor-row-normal'}">
+                                    <td><span style="font-size: 10px; font-weight: 700; ${isTarget ? 'color: #dc2626;' : 'color: var(--text-muted);'}">${posLabel}</span></td>
+                                    <td><code>#${log.raw_id || log.id}</code></td>
+                                    <td><code>${log.timestamp}</code></td>
+                                    <td><code>${log.source}</code></td>
+                                    <td><code>${log.event_type || 'N/A'}</code></td>
+                                    <td><span style="font-size: 10.5px; font-weight: 600; text-transform: uppercase;">${log.severity}</span></td>
+                                    <td><code>${log.status || 'N/A'}</code></td>
+                                    <td style="max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${log.raw_message}">${log.raw_message}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    lucide.createIcons();
 }
 
 function renderIncidentDetail(item) {
@@ -300,8 +615,12 @@ function renderIncidentDetail(item) {
                 🔒 <b>Persistence:</b> Cached in SQLite DB (Zero redundant API calls on reload)
             </div>
         </div>
+
+        <!-- Contextual Preceding / Subsequent Neighbor Logs -->
+        <div id="neighborLogsContainer"></div>
     `;
     lucide.createIcons();
+    renderNeighborLogsTable();
 }
 
 function exportIncidentReport(flaggedId) {

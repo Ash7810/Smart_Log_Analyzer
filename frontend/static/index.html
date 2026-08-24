@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LogPulse — Smart Log Analyzer</title>
-    <!-- Clean Google Fonts -->
+    <title>LogPulse — Security Log Analyzer</title>
+    <!-- Clean, standard Inter font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
@@ -22,14 +21,20 @@
                 </div>
                 <div class="brand-info">
                     <h2>LogPulse</h2>
-                    <span>Smart Log Anomaly Detector</span>
+                    <span>Security Log Anomaly Detector</span>
                 </div>
             </div>
 
-            <!-- Central View Tabs: Standard List View & Incident Detail View -->
+            <!-- Central Step Navigation / View Tabs -->
             <nav class="view-tabs">
+                <button class="view-tab" data-view="dashboard">
+                    <i data-lucide="layout-dashboard"></i> Overview / Dashboard
+                </button>
                 <button class="view-tab active" data-view="logs">
                     <i data-lucide="list"></i> All Logs & Timeline
+                </button>
+                <button class="view-tab" data-view="threats">
+                    <i data-lucide="shield-alert"></i> IP Threat Matrix
                 </button>
                 <button class="view-tab" data-view="investigate">
                     <i data-lucide="search-code"></i> Incident Investigation
@@ -79,7 +84,7 @@
             </div>
         </section>
 
-        <!-- 3. INGESTION REJECTION AUDIT DRAWER -->
+        <!-- 3. INGESTION REJECTION DRAWER -->
         <div class="rejection-alert" id="validationDrawer" style="display: none;">
             <div class="rejection-header" id="drawerToggle">
                 <div class="rejection-title">
@@ -104,10 +109,131 @@
             </div>
         </div>
 
-        <!-- 4. CORE WORKFLOW VIEWS -->
+        <!-- 4. WORKFLOW VIEWS -->
         <main class="content-area">
-            <!-- VIEW 1: ALL LOGS (LIST / TIMELINE VIEW) -->
+            <!-- VIEW 1: OVERVIEW / DASHBOARD -->
+            <section class="view-panel" id="view-dashboard">
+                <div class="dashboard-grid">
+                    <!-- Left: Workflow & Quick Start -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="workflow" style="color: var(--accent-blue);"></i>
+                                <h3>SecOps Analysis Workflow</h3>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="steps-flow">
+                                <div class="step-card">
+                                    <span class="step-num">1</span>
+                                    <div>
+                                        <h4>Ingest Log Dataset</h4>
+                                        <p>Click "Upload CSV" or "Load Default" to import <code>logs.csv</code>. The ingestion pipeline validates timestamps, parses IP sources, and rejects malformed records automatically.</p>
+                                    </div>
+                                </div>
+                                <div class="step-card">
+                                    <span class="step-num">2</span>
+                                    <div>
+                                        <h4>Deterministic Anomaly Detection</h4>
+                                        <p>The system evaluates 4 strict mathematical rules (Severity Spikes, Sliding-Window Request Floods, Off-Hours Sensitive Path Access, and Rare Administrative Operations) with 100% precision.</p>
+                                    </div>
+                                </div>
+                                <div class="step-card">
+                                    <span class="step-num">3</span>
+                                    <div>
+                                        <h4>AI Root Cause & Remediation</h4>
+                                        <p>Click "Generate AI Insights" to produce plain-English root cause summaries and concrete containment checklists cached directly in SQLite for zero reload latency.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="margin-top: 20px; padding: 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: var(--radius-sm);">
+                                <div style="display:flex; align-items:center; gap:8px; font-weight:600; color:var(--accent-blue); font-size:13px;">
+                                    <i data-lucide="shield-check"></i> System Architecture Highlights
+                                </div>
+                                <div style="font-size:12px; color:#1e3a8a; margin-top:6px; line-height:1.5;">
+                                    • <b>100% Deterministic:</b> Detection logic does not rely on LLMs, eliminating hallucinated flags.<br>
+                                    • <b>Zero-Token Caching:</b> AI diagnoses are generated once and persisted in the database.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Detection Engine Rationale & Rules Breakdown -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="shield-alert" style="color: var(--accent-green);"></i>
+                                <h3>Deterministic Detector Rules Breakdown</h3>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="rules-list" id="rulesBreakdownList">
+                                <div class="rule-item">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span class="rule-tag tag-red">severity_spike</span>
+                                        <span style="font-size: 11px; font-weight: 700; color: var(--accent-red);">High (0.95)</span>
+                                    </div>
+                                    <span class="rule-desc">Matches HTTP 5xx responses (500–599) or severity in error/critical requiring immediate triage.</span>
+                                </div>
+                                <div class="rule-item">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span class="rule-tag tag-amber">burst_frequency</span>
+                                        <span style="font-size: 11px; font-weight: 700; color: var(--accent-amber);">High (0.90)</span>
+                                    </div>
+                                    <span class="rule-desc">Two-pointer sliding 60-second window flagging &ge;10 requests from a single source (DDoS or credential stuffing).</span>
+                                </div>
+                                <div class="rule-item">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span class="rule-tag tag-purple">off_hours_access</span>
+                                        <span style="font-size: 11px; font-weight: 700; color: var(--accent-purple);">Critical (0.98)</span>
+                                    </div>
+                                    <span class="rule-desc">Restricted administrative URI access (/admin, /api/internal, /api/export) during off-hours (00:00 - 06:00 UTC).</span>
+                                </div>
+                                <div class="rule-item">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span class="rule-tag tag-blue">rare_event_type</span>
+                                        <span style="font-size: 11px; font-weight: 700; color: var(--accent-blue);">Medium (0.75)</span>
+                                    </div>
+                                    <span class="rule-desc">Infrequently observed administrative operations occurring &le;1.5% frequency across cluster.</span>
+                                </div>
+                            </div>
+
+                            <div style="margin-top: 18px; display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px solid var(--border);">
+                                <span style="font-size: 12px; color: var(--text-muted);">Explore details in log streams:</span>
+                                <button class="btn btn-secondary" onclick="switchView('logs')" style="padding: 4px 10px; font-size: 12px;">
+                                    View Log Stream <i data-lucide="arrow-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW 2: ALL LOGS & TIME-SERIES INCIDENT HEATMAP -->
             <section class="view-panel active" id="view-logs">
+                <!-- Interactive Time-Series Heatmap / Histogram -->
+                <div class="card heatmap-container">
+                    <div class="heatmap-header">
+                        <div class="heatmap-title">
+                            <i data-lucide="activity"></i>
+                            <span>Time-Series Traffic & Incident Spike Timeline</span>
+                        </div>
+                        <div class="heatmap-legend">
+                            <span class="legend-item"><span class="legend-dot dot-normal"></span> Normal Logs</span>
+                            <span class="legend-item"><span class="legend-dot dot-anomaly"></span> Anomaly Incidents</span>
+                            <span class="legend-item"><span class="legend-dot dot-active"></span> Active Slice</span>
+                            <button class="btn btn-secondary" id="btnResetHeatmapFilter" style="padding: 2px 8px; font-size: 11px; margin-left: 8px;">Reset Filter</button>
+                        </div>
+                    </div>
+                    <div class="timeline-bars-wrapper" id="timelineBarsContainer">
+                        <!-- Rendered dynamically -->
+                    </div>
+                    <div class="timeline-axis" id="timelineAxisContainer">
+                        <!-- Timestamps dynamically -->
+                    </div>
+                </div>
+
                 <div class="filter-toolbar">
                     <div class="search-box">
                         <i data-lucide="search"></i>
@@ -158,7 +284,33 @@
                 </div>
             </section>
 
-            <!-- VIEW 2: INCIDENT INVESTIGATION (DETAIL VIEW) -->
+            <!-- VIEW 3: IP THREAT AGGREGATION MATRIX -->
+            <section class="view-panel" id="view-threats">
+                <div class="threats-layout">
+                    <div class="card" style="padding: 16px; margin-bottom: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <h3 style="font-size: 16px; font-weight: 700; color: var(--text-main); margin-bottom: 4px;">
+                                    🛡️ IP Threat Aggregation & Risk Matrix
+                                </h3>
+                                <p style="font-size: 13px; color: var(--text-muted); margin: 0;">
+                                    Composite risk scoring grouping all host IPs by anomaly density, multi-detector violations, and origin subnet.
+                                </p>
+                            </div>
+                            <div class="search-box" style="width: 260px;">
+                                <i data-lucide="search"></i>
+                                <input type="text" id="threatSearchInput" placeholder="Filter by IP...">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="threat-cards-grid" id="threatCardsGrid">
+                        <!-- Injected via JavaScript -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW 4: INCIDENT INVESTIGATION & CONTEXTUAL NEIGHBOR LOGS -->
             <section class="view-panel" id="view-investigate">
                 <div class="investigate-layout">
                     <!-- Left: Incident List -->
@@ -186,6 +338,6 @@
     <!-- Notification Toasts -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="app.js"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>
