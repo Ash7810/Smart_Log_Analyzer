@@ -299,7 +299,11 @@ function renderLogsTable() {
         return;
     }
 
-    tbody.innerHTML = filtered.map(log => {
+    const maxDisplay = 250;
+    const displayList = filtered.slice(0, maxDisplay);
+    const hasMore = filtered.length > maxDisplay;
+
+    const rowsHtml = displayList.map(log => {
         const isAnomaly = log.is_flagged;
         const badgeClass = isAnomaly ? 'badge-anomaly' : (log.is_valid ? 'badge-normal' : 'badge-spike');
         const statusText = isAnomaly ? 'ANOMALY' : (log.is_valid ? 'NORMAL' : 'INVALID');
@@ -320,6 +324,16 @@ function renderLogsTable() {
             </tr>
         `;
     }).join('');
+
+    const moreBanner = hasMore ? `
+        <tr>
+            <td colspan="9" style="text-align: center; background: var(--bg-subtle); color: var(--text-muted); font-size: 12px; padding: 10px;">
+                Showing first <b>${maxDisplay}</b> of <b>${filtered.length.toLocaleString()}</b> matching events. Use Search or Filters to pinpoint specific records.
+            </td>
+        </tr>
+    ` : '';
+
+    tbody.innerHTML = rowsHtml + moreBanner;
     lucide.createIcons();
 }
 
@@ -695,9 +709,8 @@ async function handleFileUpload(file) {
     
     showLoader(
         `Ingesting & Validating ${file.name}...`,
-        "Parsing CSV rows, validating ISO timestamps, indexing hosts, and running deterministic anomaly detectors."
+        "Parsing CSV rows, validating timestamps, and calculating anomaly detections."
     );
-    showToast(`Uploading ${file.name}...`, 'info');
 
     if (uploadBtn) {
         uploadBtn.disabled = true;
@@ -716,9 +729,9 @@ async function handleFileUpload(file) {
             const valid = res.summary.valid_rows || 0;
             const flagged = res.summary.flagged_rows || 0;
             const rejected = res.summary.rejected_rows || 0;
-            showToast(`Successfully ingested ${valid.toLocaleString()} rows (${flagged} anomalies, ${rejected} rejected)!`, 'success');
             await fetchDashboardData();
             switchView('logs');
+            showToast(`Ingested ${valid.toLocaleString()} rows (${flagged} anomalies, ${rejected} rejected)!`, 'success');
         } else {
             showToast(res.detail || res.error || 'Upload error', 'error');
         }
@@ -740,9 +753,8 @@ async function loadDefaultDataset() {
     
     showLoader(
         "Loading Default Dataset (logs.csv)...",
-        "Validating 257 sample log records, filtering schema rejections, and calculating ground-truth anomaly scores."
+        "Validating sample log records and calculating ground-truth anomaly scores."
     );
-    showToast('Loading logs.csv...', 'info');
 
     if (defaultBtn) {
         defaultBtn.disabled = true;
@@ -755,9 +767,9 @@ async function loadDefaultDataset() {
         if (fileRes.status === 'success') {
             const valid = fileRes.summary.valid_rows || 0;
             const flagged = fileRes.summary.flagged_rows || 0;
-            showToast(`Loaded ${valid} valid entries & detected ${flagged} anomalies!`, 'success');
             await fetchDashboardData();
             switchView('logs');
+            showToast(`Loaded ${valid} valid entries & detected ${flagged} anomalies!`, 'success');
         } else {
             showToast(fileRes.detail || 'Could not load default file', 'error');
         }

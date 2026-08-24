@@ -152,17 +152,19 @@ def get_summary(db: Session = Depends(get_db)):
         "timestamp": summary.timestamp.isoformat() if summary.timestamp else None
     }
 
+from sqlalchemy.orm import joinedload
+
 @app.get("/api/logs")
 def get_logs(
     only_flagged: bool = False,
     only_invalid: bool = False,
     severity: Optional[str] = None,
     rule: Optional[str] = None,
-    limit: int = 500,
+    limit: int = 5000,
     offset: int = 0,
     db: Session = Depends(get_db)
 ):
-    query = db.query(LogEntry)
+    query = db.query(LogEntry).options(joinedload(LogEntry.flagged_entry))
     if only_invalid:
         query = query.filter(LogEntry.is_valid == False)
     elif only_flagged:
@@ -173,7 +175,6 @@ def get_logs(
     if severity:
         query = query.filter(LogEntry.severity == severity.lower())
 
-    # Order invalid to the end or keep chronological
     total_count = query.count()
     entries = query.order_by(LogEntry.id.asc()).offset(offset).limit(limit).all()
 
