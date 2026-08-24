@@ -150,8 +150,8 @@ Detection rules are executed in mathematical and deterministic logic without ext
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/your-username/smart-log-analyzer.git
-cd smart-log-analyzer
+git clone https://github.com/Ash7810/Smart_Log_Analyzer.git
+cd Smart_Log_Analyzer
 ```
 
 ### Step 2: Create a Virtual Environment
