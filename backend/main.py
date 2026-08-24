@@ -208,24 +208,18 @@ def get_logs(
 
     return {"total": total_count, "items": results}
 
-from backend.ai import generate_explanation_and_root_cause, get_mitre_mapping, classify_ip_origin
-
 @app.get("/api/flagged")
 def get_flagged_entries(db: Session = Depends(get_db)):
     flagged = db.query(FlaggedEntry).join(LogEntry).order_by(LogEntry.timestamp.asc()).all()
     results = []
     for f in flagged:
         entry = f.log_entry
-        mitre = get_mitre_mapping(f.detector_rule)
-        ip_classification = classify_ip_origin(entry.source)
         results.append({
-            "id": f.id,
             "flagged_id": f.id,
             "log_entry_id": entry.id,
             "raw_id": entry.raw_id,
             "timestamp": entry.timestamp.strftime("%Y-%m-%d %H:%M:%S") if entry.timestamp else entry.raw_timestamp,
             "source": entry.source,
-            "ip_origin": ip_classification,
             "event_type": entry.event_type,
             "severity": entry.severity,
             "status": entry.status,
@@ -233,212 +227,10 @@ def get_flagged_entries(db: Session = Depends(get_db)):
             "detector_rule": f.detector_rule,
             "score": f.score,
             "reason": f.reason,
-            "mitre": mitre,
             "ai_explanation": f.ai_explanation,
             "ai_root_cause": f.ai_root_cause
         })
     return {"total": len(results), "items": results}
-
-class TuneThresholdsRequest(BaseModel):
-    burst_threshold_count: int = 10
-    burst_window_seconds: int = 60
-    off_hours_start_hour: int = 0
-    off_hours_end_hour: int = 6
-    sensitive_paths: List[str] = ["/admin", "/api/internal", "/api/export", "/debug", "/root", "/api/config"]
-    rare_percentage_ratio: float = 0.015
-    rare_max_occurrences: int = 2
-
-@app.post("/api/tune-thresholds")
-def tune_detector_thresholds(req: TuneThresholdsRequest, db: Session = Depends(get_db)):
-    """
-    Re-runs deterministic anomaly detection with live custom parameters.
-    """
-    flagged = run_anomaly_detection(
-        db=db,
-        burst_threshold_count=req.burst_threshold_count,
-        burst_window_seconds=req.burst_window_seconds,
-        off_hours_start_hour=req.off_hours_start_hour,
-        off_hours_end_hour=req.off_hours_end_hour,
-        sensitive_paths=req.sensitive_paths,
-        rare_percentage_ratio=req.rare_percentage_ratio,
-        rare_max_occurrences=req.rare_max_occurrences
-    )
-    return {
-        "status": "success",
-        "flagged_count": len(flagged),
-        "thresholds_applied": req.dict()
-    }
-
-@app.get("/api/logs/neighbors/{log_id}")
-def get_log_neighbors(
-    log_id: int,
-    window: int = 5,
-    same_host: bool = True,
-    db: Session = Depends(get_db)
-):
-    """
-    Fetches contextual +/- N neighbor logs around a target log entry,
-    optionally filtered to the same host/source IP.
-    """
-    target = db.query(LogEntry).filter(LogEntry.id == log_id).first()
-    if not target:
-        # Check if log_id matches raw_id
-        target = db.query(LogEntry).filter(LogEntry.raw_id == log_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="Target log entry not found")
-
-    query = db.query(LogEntry)
-    if same_host and target.source:
-        query = query.filter(LogEntry.source == target.source)
-
-    # Preceding logs (up to window)
-    preceding = (
-        query.filter(LogEntry.id < target.id)
-        .order_by(LogEntry.id.desc())
-        .limit(window)
-        .all()
-    )
-    preceding.reverse()
-
-    # Subsequent logs (up to window)
-    subsequent = (
-        query.filter(LogEntry.id > target.id)
-        .order_by(LogEntry.id.asc())
-        .limit(window)
-        .all()
-    )
-
-    combined = preceding + [target] + subsequent
-
-    results = []
-    for entry in combined:
-        flagged_data = None
-        if entry.flagged_entry:
-            flagged_data = {
-                "id": entry.flagged_entry.id,
-                "detector_rule": entry.flagged_entry.detector_rule,
-                "score": entry.flagged_entry.score,
-                "reason": entry.flagged_entry.reason,
-            }
-
-        results.append({
-            "id": entry.id,
-            "raw_id": entry.raw_id,
-            "timestamp": entry.timestamp.strftime("%Y-%m-%d %H:%M:%S") if entry.timestamp else entry.raw_timestamp,
-            "source": entry.source,
-            "event_type": entry.event_type,
-            "severity": entry.severity,
-            "status": entry.status,
-            "raw_message": entry.raw_message,
-            "is_valid": entry.is_valid,
-            "is_target": (entry.id == target.id),
-            "is_flagged": flagged_data is not None,
-            "flagged": flagged_data
-        })
-
-    return {
-        "target_id": target.id,
-        "target_source": target.source,
-        "same_host": same_host,
-        "preceding_count": len(preceding),
-        "subsequent_count": len(subsequent),
-        "items": results
-    }
-
-@app.get("/api/threats/ips")
-def get_ip_threat_aggregation(db: Session = Depends(get_db)):
-    """
-    Groups logs by Source IP to calculate composite threat risk scores,
-    breakdown of rules triggered, request volumes, error ratios, and classifications.
-    """
-    logs = db.query(LogEntry).all()
-    if not logs:
-        return {"total_ips": 0, "items": []}
-
-    ip_stats = {}
-    for entry in logs:
-        src = entry.source or "unknown"
-        if src not in ip_stats:
-            ip_stats[src] = {
-                "source": src,
-                "ip_origin": classify_ip_origin(src),
-                "total_requests": 0,
-                "error_requests": 0,
-                "flagged_entries": 0,
-                "triggered_rules": set(),
-                "endpoints_accessed": set(),
-                "first_seen": None,
-                "last_seen": None,
-                "sample_anomalies": []
-            }
-
-        stats = ip_stats[src]
-        stats["total_requests"] += 1
-
-        if (entry.status and 400 <= entry.status <= 599) or entry.severity in ["error", "critical"]:
-            stats["error_requests"] += 1
-
-        if entry.event_type:
-            stats["endpoints_accessed"].add(entry.event_type)
-
-        if entry.timestamp:
-            ts_str = entry.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-            if not stats["first_seen"] or ts_str < stats["first_seen"]:
-                stats["first_seen"] = ts_str
-            if not stats["last_seen"] or ts_str > stats["last_seen"]:
-                stats["last_seen"] = ts_str
-
-        if entry.flagged_entry:
-            stats["flagged_entries"] += 1
-            stats["triggered_rules"].add(entry.flagged_entry.detector_rule)
-            if len(stats["sample_anomalies"]) < 3:
-                stats["sample_anomalies"].append({
-                    "raw_id": entry.raw_id or entry.id,
-                    "rule": entry.flagged_entry.detector_rule,
-                    "reason": entry.flagged_entry.reason,
-                    "score": entry.flagged_entry.score
-                })
-
-    results = []
-    for src, stats in ip_stats.items():
-        rules_list = sorted(list(stats["triggered_rules"]))
-        # Calculate composite risk score:
-        # Rules diversity (up to 40) + Flagged density (up to 40) + Error ratio (up to 20)
-        rule_score = min(40, len(rules_list) * 15)
-        flag_ratio = stats["flagged_entries"] / max(1, stats["total_requests"])
-        flag_score = min(40, int(flag_ratio * 50) + min(20, stats["flagged_entries"] * 2))
-        err_ratio = stats["error_requests"] / max(1, stats["total_requests"])
-        err_score = min(20, int(err_ratio * 20))
-        
-        composite_score = min(100, rule_score + flag_score + err_score)
-        
-        if composite_score >= 70:
-            threat_level = "CRITICAL"
-        elif composite_score >= 40:
-            threat_level = "HIGH"
-        elif composite_score >= 15 or stats["flagged_entries"] > 0:
-            threat_level = "MEDIUM"
-        else:
-            threat_level = "LOW"
-
-        results.append({
-            "source": stats["source"],
-            "ip_origin": stats["ip_origin"],
-            "total_requests": stats["total_requests"],
-            "error_requests": stats["error_requests"],
-            "flagged_entries": stats["flagged_entries"],
-            "distinct_rules_count": len(rules_list),
-            "triggered_rules": rules_list,
-            "distinct_endpoints": len(stats["endpoints_accessed"]),
-            "first_seen": stats["first_seen"],
-            "last_seen": stats["last_seen"],
-            "composite_score": composite_score,
-            "threat_level": threat_level,
-            "sample_anomalies": stats["sample_anomalies"]
-        })
-
-    results.sort(key=lambda x: (x["composite_score"], x["flagged_entries"], x["total_requests"]), reverse=True)
-    return {"total_ips": len(results), "items": results}
 
 @app.post("/api/explain/{flagged_id}")
 def explain_flagged_entry(flagged_id: int, force_refresh: bool = False, db: Session = Depends(get_db)):

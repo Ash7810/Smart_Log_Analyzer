@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LogPulse — Security Log Analyzer</title>
-    <!-- Clean, standard Inter font -->
+    <title>LogPulse — Smart Log Analyzer</title>
+    <!-- Clean Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
@@ -21,20 +21,14 @@
                 </div>
                 <div class="brand-info">
                     <h2>LogPulse</h2>
-                    <span>Security Log Anomaly Detector</span>
+                    <span>Smart Log Anomaly Detector</span>
                 </div>
             </div>
 
-            <!-- Central Step Navigation / View Tabs -->
+            <!-- Central View Tabs: Standard List View & Incident Detail View -->
             <nav class="view-tabs">
-                <button class="view-tab" data-view="dashboard">
-                    <i data-lucide="sliders"></i> Rule Tuner & Overview
-                </button>
                 <button class="view-tab active" data-view="logs">
-                    <i data-lucide="list"></i> All Logs & Heatmap
-                </button>
-                <button class="view-tab" data-view="threats">
-                    <i data-lucide="shield-alert"></i> IP Threat Matrix
+                    <i data-lucide="list"></i> All Logs & Timeline
                 </button>
                 <button class="view-tab" data-view="investigate">
                     <i data-lucide="search-code"></i> Incident Investigation
@@ -84,7 +78,7 @@
             </div>
         </section>
 
-        <!-- 3. INGESTION REJECTION DRAWER -->
+        <!-- 3. INGESTION REJECTION AUDIT DRAWER -->
         <div class="rejection-alert" id="validationDrawer" style="display: none;">
             <div class="rejection-header" id="drawerToggle">
                 <div class="rejection-title">
@@ -109,139 +103,10 @@
             </div>
         </div>
 
-        <!-- 4. WORKFLOW VIEWS -->
+        <!-- 4. CORE WORKFLOW VIEWS -->
         <main class="content-area">
-            <!-- VIEW 1: DASHBOARD & INTERACTIVE RULE THRESHOLD TUNER -->
-            <section class="view-panel" id="view-dashboard">
-                <div class="dashboard-grid">
-                    <!-- Left: Interactive Threshold Controls -->
-                    <div class="card">
-                        <div class="card-header" style="justify-content: space-between;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <i data-lucide="sliders" style="color: var(--accent-blue);"></i>
-                                <h3>Interactive Rule Threshold Tuner</h3>
-                            </div>
-                            <button class="btn btn-primary" id="btnApplyTuning" style="padding: 5px 14px; font-size: 12px;">
-                                <i data-lucide="play"></i> Apply & Re-scan
-                            </button>
-                        </div>
-                        <div class="card-body">
-                            <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 18px;">
-                                Dynamically adjust detector parameters and test sensitivity against your log stream in real-time.
-                            </p>
-
-                            <div class="tuner-grid">
-                                <!-- Tuner 1: Burst Threshold -->
-                                <div class="tuner-box">
-                                    <div class="tuner-header">
-                                        <label for="tuneBurstCount">Burst Request Threshold</label>
-                                        <span class="tuner-val-badge" id="valBurstCount">10 reqs</span>
-                                    </div>
-                                    <input type="range" id="tuneBurstCount" min="3" max="30" value="10" step="1" class="tuner-slider">
-                                    <div class="tuner-help">Trigger burst flag when requests from single IP &ge; X within rolling window</div>
-                                </div>
-
-                                <!-- Tuner 2: Burst Window -->
-                                <div class="tuner-box">
-                                    <div class="tuner-header">
-                                        <label for="tuneBurstWindow">Burst Window (Seconds)</label>
-                                        <span class="tuner-val-badge" id="valBurstWindow">60s</span>
-                                    </div>
-                                    <input type="range" id="tuneBurstWindow" min="10" max="300" value="60" step="10" class="tuner-slider">
-                                    <div class="tuner-help">Sliding time window duration in seconds for burst rate calculation</div>
-                                </div>
-
-                                <!-- Tuner 3: Off-Hours Start -->
-                                <div class="tuner-box">
-                                    <div class="tuner-header">
-                                        <label for="tuneOffStart">Off-Hours Start Time</label>
-                                        <span class="tuner-val-badge" id="valOffStart">00:00 (12 AM)</span>
-                                    </div>
-                                    <input type="range" id="tuneOffStart" min="0" max="23" value="0" step="1" class="tuner-slider">
-                                    <div class="tuner-help">Hour of day (0-23) when off-hours access restriction begins</div>
-                                </div>
-
-                                <!-- Tuner 4: Off-Hours End -->
-                                <div class="tuner-box">
-                                    <div class="tuner-header">
-                                        <label for="tuneOffEnd">Off-Hours End Time</label>
-                                        <span class="tuner-val-badge" id="valOffEnd">06:00 (6 AM)</span>
-                                    </div>
-                                    <input type="range" id="tuneOffEnd" min="0" max="23" value="6" step="1" class="tuner-slider">
-                                    <div class="tuner-help">Hour of day (0-23) when standard business hours resume</div>
-                                </div>
-
-                                <!-- Tuner 5: Sensitive Paths -->
-                                <div class="tuner-box tuner-full">
-                                    <div class="tuner-header">
-                                        <label for="tuneSensitivePaths">Restricted Sensitive URIs (comma-separated)</label>
-                                    </div>
-                                    <input type="text" id="tuneSensitivePaths" class="tuner-input" value="/admin, /api/internal, /api/export, /debug, /root, /api/config">
-                                    <div class="tuner-help">URIs checked against off-hours activity for critical anomaly detection</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Right: Detection Engine Rationale & Architecture -->
-                    <div class="card">
-                        <div class="card-header">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <i data-lucide="shield-check" style="color: var(--accent-green);"></i>
-                                <h3>Deterministic Detector Rules</h3>
-                            </div>
-                        </div>
-                        <div class="card-body">
-                            <div class="rules-list" id="rulesBreakdownList">
-                                <div class="rule-item">
-                                    <span class="rule-tag tag-red">severity_spike</span>
-                                    <span class="rule-desc">Matches HTTP 5xx or error/critical severities requiring immediate triage.</span>
-                                </div>
-                                <div class="rule-item">
-                                    <span class="rule-tag tag-amber">burst_frequency</span>
-                                    <span class="rule-desc">Linear O(N) sliding two-pointer window detecting DDoS or brute-force floods.</span>
-                                </div>
-                                <div class="rule-item">
-                                    <span class="rule-tag tag-purple">off_hours_access</span>
-                                    <span class="rule-desc">Restricted administrative URI access during off-hours (e.g. 00:00 - 06:00 UTC).</span>
-                                </div>
-                                <div class="rule-item">
-                                    <span class="rule-tag tag-blue">rare_event_type</span>
-                                    <span class="rule-desc">Infrequently observed administrative endpoints (occurred &le; 1.5% frequency).</span>
-                                </div>
-                            </div>
-                            <div style="margin-top: 18px; padding: 12px; background: var(--bg-subtle); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-muted);">
-                                💡 <b>Zero AI in Detection:</b> Every flag is 100% deterministic, explainable, and reproducible without AI token costs or hallucinations.
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- VIEW 2: ALL LOGS & TIME-SERIES INCIDENT HEATMAP -->
+            <!-- VIEW 1: ALL LOGS (LIST / TIMELINE VIEW) -->
             <section class="view-panel active" id="view-logs">
-                <!-- Interactive Time-Series Heatmap / Histogram -->
-                <div class="card heatmap-container">
-                    <div class="heatmap-header">
-                        <div class="heatmap-title">
-                            <i data-lucide="activity"></i>
-                            <span>Time-Series Incident Heatmap & Spikes</span>
-                        </div>
-                        <div class="heatmap-legend">
-                            <span class="legend-item"><span class="legend-dot dot-normal"></span> Normal Traffic</span>
-                            <span class="legend-item"><span class="legend-dot dot-anomaly"></span> Anomaly Marker</span>
-                            <span class="legend-item"><span class="legend-dot dot-active"></span> Filtered Time Slice</span>
-                            <button class="btn btn-secondary" id="btnResetHeatmapFilter" style="padding: 2px 8px; font-size: 11px; margin-left: 8px;">Reset Filter</button>
-                        </div>
-                    </div>
-                    <div class="timeline-bars-wrapper" id="timelineBarsContainer">
-                        <!-- Rendered dynamically -->
-                    </div>
-                    <div class="timeline-axis" id="timelineAxisContainer">
-                        <!-- Timestamps dynamically -->
-                    </div>
-                </div>
-
                 <div class="filter-toolbar">
                     <div class="search-box">
                         <i data-lucide="search"></i>
@@ -292,33 +157,7 @@
                 </div>
             </section>
 
-            <!-- VIEW 3: IP THREAT AGGREGATION MATRIX -->
-            <section class="view-panel" id="view-threats">
-                <div class="threats-layout">
-                    <div class="card" style="padding: 16px; margin-bottom: 16px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div>
-                                <h3 style="font-size: 16px; font-weight: 700; color: var(--text-main); margin-bottom: 4px;">
-                                    🛡️ IP Threat Aggregation & Risk Matrix
-                                </h3>
-                                <p style="font-size: 13px; color: var(--text-muted); margin: 0;">
-                                    Composite risk scoring grouping all host IPs by anomaly density, multi-detector violations, and origin subnet.
-                                </p>
-                            </div>
-                            <div class="search-box" style="width: 260px;">
-                                <i data-lucide="search"></i>
-                                <input type="text" id="threatSearchInput" placeholder="Filter by IP...">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="threat-cards-grid" id="threatCardsGrid">
-                        <!-- Injected via JavaScript -->
-                    </div>
-                </div>
-            </section>
-
-            <!-- VIEW 4: INCIDENT INVESTIGATION & CONTEXTUAL NEIGHBOR LOGS -->
+            <!-- VIEW 2: INCIDENT INVESTIGATION (DETAIL VIEW) -->
             <section class="view-panel" id="view-investigate">
                 <div class="investigate-layout">
                     <!-- Left: Incident List -->
@@ -346,6 +185,6 @@
     <!-- Notification Toasts -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="/static/app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>

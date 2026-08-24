@@ -91,6 +91,7 @@ Log Entry Details:
         except Exception as e:
             last_error = str(e)
             continue
+
     # High-quality contextual fallback if API quota or connectivity is exhausted
     rule_explanations = {
         "severity_spike": f"This event was flagged due to an unhandled internal server error or critical severity response on '{event_type}'. The likely root cause is a database connectivity issue, downstream service failure, or unhandled application exception.",
@@ -109,47 +110,3 @@ Log Entry Details:
     fallback_rc = rule_remediations.get(detector_rule, "1. Verify host IP identity.\n2. Review adjacent log events.\n3. Revoke access if suspicious.")
 
     return fallback_exp, fallback_rc
-
-# MITRE ATT&CK Taxonomy Mapping for Rule Categories
-MITRE_ATTACK_MAPPINGS = {
-    "severity_spike": {
-        "technique_id": "T1499",
-        "technique_name": "Endpoint Denial of Service: Application Exhaustion",
-        "tactic": "Impact"
-    },
-    "burst_frequency": {
-        "technique_id": "T1110",
-        "technique_name": "Brute Force: Credential Stuffing / Password Guessing",
-        "tactic": "Credential Access"
-    },
-    "off_hours_access": {
-        "technique_id": "T1078",
-        "technique_name": "Valid Accounts: Off-Hours Access & Privilege Escalation",
-        "tactic": "Initial Access & Persistence"
-    },
-    "rare_event_type": {
-        "technique_id": "T1059",
-        "technique_name": "Command and Scripting Interpreter: Admin Endpoint Invocation",
-        "tactic": "Execution & Exfiltration"
-    }
-}
-
-def get_mitre_mapping(detector_rule: str) -> dict:
-    return MITRE_ATTACK_MAPPINGS.get(detector_rule, {
-        "technique_id": "T1000",
-        "technique_name": "Unclassified Anomaly Activity",
-        "tactic": "Discovery"
-    })
-
-def classify_ip_origin(ip_str: str) -> str:
-    """Classify IP as Private LAN, Loopback, Cloud Gateway, or Public WAN."""
-    if not ip_str:
-        return "Unknown Origin"
-    ip_str = ip_str.strip()
-    if ip_str.startswith("127.") or ip_str == "localhost":
-        return "Loopback Interface"
-    if ip_str.startswith("192.168.") or ip_str.startswith("10.") or ip_str.startswith("172.16."):
-        return "Internal Corporate LAN (RFC 1918)"
-    if ip_str.startswith("203.0.113.") or ip_str.startswith("198.51.100."):
-        return "External Public WAN (Documentation Subnet)"
-    return "External Public WAN Host"

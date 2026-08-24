@@ -1,0 +1,15 @@
+[build]
+  publish = "frontend/static"
+
+# 1. API Proxy to Render Backend (Must be placed before SPA fallback)
+[[redirects]]
+  from = "/api/*"
+  to = "https://smart-log-analyzer-6z06.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# 2. SPA Fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

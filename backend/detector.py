@@ -3,41 +3,16 @@ from typing import List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from backend.db import LogEntry, FlaggedEntry, IngestionSummary
 
-# Detection Rule Default Configurable Thresholds
-DEFAULT_SENSITIVE_PATHS = ["/admin", "/api/internal", "/api/export", "/debug", "/root", "/api/config"]
-DEFAULT_OFF_HOURS_START_HOUR = 0   # 00:00 (12 AM)
-DEFAULT_OFF_HOURS_END_HOUR = 6     # 06:00 (6 AM)
-DEFAULT_BURST_WINDOW_SECONDS = 60  # Sliding time window in seconds
-DEFAULT_BURST_THRESHOLD_COUNT = 10 # Minimum requests in window to trigger burst flag
-DEFAULT_RARE_EVENT_MAX_OCCURRENCES = 2
-DEFAULT_RARE_EVENT_PERCENTAGE_RATIO = 0.015  # <1.5% frequency
+# Detection Rule Configurable Thresholds
+SENSITIVE_PATHS = ["/admin", "/api/internal", "/api/export", "/debug", "/root", "/api/config"]
+OFF_HOURS_START_HOUR = 0   # 00:00 (12 AM)
+OFF_HOURS_END_HOUR = 6     # 06:00 (6 AM)
+BURST_WINDOW_SECONDS = 60  # Sliding time window in seconds
+BURST_THRESHOLD_COUNT = 10 # Minimum requests in window to trigger burst flag
+RARE_EVENT_MAX_OCCURRENCES = 2
+RARE_EVENT_PERCENTAGE_RATIO = 0.015  # <1.5% frequency
 
-# Backwards compatible alias constants
-SENSITIVE_PATHS = DEFAULT_SENSITIVE_PATHS
-OFF_HOURS_START_HOUR = DEFAULT_OFF_HOURS_START_HOUR
-OFF_HOURS_END_HOUR = DEFAULT_OFF_HOURS_END_HOUR
-BURST_WINDOW_SECONDS = DEFAULT_BURST_WINDOW_SECONDS
-BURST_THRESHOLD_COUNT = DEFAULT_BURST_THRESHOLD_COUNT
-RARE_EVENT_MAX_OCCURRENCES = DEFAULT_RARE_EVENT_MAX_OCCURRENCES
-RARE_EVENT_PERCENTAGE_RATIO = DEFAULT_RARE_EVENT_PERCENTAGE_RATIO
-
-def run_anomaly_detection(
-    db: Session,
-    burst_threshold_count: int = DEFAULT_BURST_THRESHOLD_COUNT,
-    burst_window_seconds: int = DEFAULT_BURST_WINDOW_SECONDS,
-    off_hours_start_hour: int = DEFAULT_OFF_HOURS_START_HOUR,
-    off_hours_end_hour: int = DEFAULT_OFF_HOURS_END_HOUR,
-    sensitive_paths: List[str] = None,
-    rare_percentage_ratio: float = DEFAULT_RARE_EVENT_PERCENTAGE_RATIO,
-    rare_max_occurrences: int = DEFAULT_RARE_EVENT_MAX_OCCURRENCES
-) -> List[FlaggedEntry]:
-    """
-    Pure deterministic rule-based anomaly detector.
-    Does NOT use AI or ML model.
-    Accepts dynamic parameter tuning for real-time interactive threshold adjustment.
-    """
-    if sensitive_paths is None:
-        sensitive_paths = DEFAULT_SENSITIVE_PATHS
+def run_anomaly_detection(db: Session) -> List[FlaggedEntry]:
     """
     Pure deterministic rule-based anomaly detector.
     Does NOT use AI or ML model.
@@ -62,8 +37,8 @@ def run_anomaly_detection(
         et = (entry.event_type or "").strip()
         event_type_counts[et] = event_type_counts.get(et, 0) + 1
 
-    # Frequency threshold: event types that appear <= rare_max_occurrences or < rare_percentage_ratio of total dataset
-    rare_threshold = max(rare_max_occurrences, int(total_valid * rare_percentage_ratio))
+    # Frequency threshold: event types that appear <= RARE_EVENT_MAX_OCCURRENCES or < RARE_EVENT_PERCENTAGE_RATIO of total dataset
+    rare_threshold = max(RARE_EVENT_MAX_OCCURRENCES, int(total_valid * RARE_EVENT_PERCENTAGE_RATIO))
 
     # Helper tracking for burst detection: window per source
     source_timestamps: Dict[str, List[Tuple[datetime, int]]] = {}  # source -> list of (timestamp, entry_id)
@@ -83,11 +58,11 @@ def run_anomaly_detection(
         n = len(ts_list)
         left = 0
         for right in range(n):
-            # Advance left pointer until window is within burst_window_seconds
-            while (ts_list[right][0] - ts_list[left][0]).total_seconds() > burst_window_seconds:
+            # Advance left pointer until window is within BURST_WINDOW_SECONDS
+            while (ts_list[right][0] - ts_list[left][0]).total_seconds() > BURST_WINDOW_SECONDS:
                 left += 1
-            # If current window has >= burst_threshold_count events, flag all events in window
-            if (right - left + 1) >= burst_threshold_count:
+            # If current window has >= BURST_THRESHOLD_COUNT events, flag all events in window
+            if (right - left + 1) >= BURST_THRESHOLD_COUNT:
                 for k in range(left, right + 1):
                     burst_flagged_ids.add(ts_list[k][1])
 
@@ -111,18 +86,13 @@ def run_anomaly_detection(
         if entry.id in burst_flagged_ids:
             rules.append("burst_frequency")
             scores.append("High (0.90)")
-            reasons.append(f"high frequency request burst from source {entry.source} (>={burst_threshold_count} reqs/{burst_window_seconds}s)")
+            reasons.append(f"high frequency request burst from source {entry.source} (>=10 reqs/min)")
 
         # Rule 3: Off-Hours Access to Sensitive Paths
         if entry.timestamp:
             hour = entry.timestamp.hour
-            # Check if hour is in off-hours window (supporting rollover like 22 to 6)
-            if off_hours_start_hour <= off_hours_end_hour:
-                is_off_hours = off_hours_start_hour <= hour < off_hours_end_hour
-            else:
-                is_off_hours = hour >= off_hours_start_hour or hour < off_hours_end_hour
-
-            is_sensitive = any(path in (entry.event_type or "") or path in (entry.raw_message or "") for path in sensitive_paths)
+            is_off_hours = OFF_HOURS_START_HOUR <= hour < OFF_HOURS_END_HOUR
+            is_sensitive = any(path in (entry.event_type or "") or path in (entry.raw_message or "") for path in SENSITIVE_PATHS)
             if is_off_hours and is_sensitive:
                 rules.append("off_hours_access")
                 scores.append("Critical (0.98)")
