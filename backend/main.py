@@ -380,3 +380,120 @@ def review_any_log_with_ai(log_id: int, db: Session = Depends(get_db)):
         "detector_rule": rule,
         "review": review
     }
+
+@app.get("/favicon.ico")
+def favicon():
+    return FileResponse(os.path.join(static_dir, "index.html"), media_type="image/x-icon")
+
+@app.get("/api/threats/ips")
+def get_threats_by_ip(db: Session = Depends(get_db)):
+    """
+    Groups and calculates composite threat risk scores (0-100) per Source IP.
+    """
+    entries = db.query(LogEntry).options(joinedload(LogEntry.flagged_entry)).all()
+    ip_stats = {}
+
+    for entry in entries:
+        src = entry.source or "unknown"
+        if src not in ip_stats:
+            ip_stats[src] = {
+                "source": src,
+                "ip_origin": "External / Public IP" if not (src.startswith("10.") or src.startswith("192.168.") or src.startswith("172.16.") or src == "127.0.0.1") else "Internal Subnet",
+                "total_requests": 0,
+                "flagged_entries": 0,
+                "error_requests": 0,
+                "distinct_endpoints": set(),
+                "triggered_rules": set(),
+                "first_seen": entry.timestamp.strftime("%Y-%m-%d %H:%M:%S") if entry.timestamp else None,
+            }
+
+        stats = ip_stats[src]
+        stats["total_requests"] += 1
+        if entry.event_type:
+            stats["distinct_endpoints"].add(entry.event_type)
+
+        if str(entry.status or "").startswith("5") or (entry.severity or "").lower() in ["error", "critical"]:
+            stats["error_requests"] += 1
+
+        if entry.flagged_entry:
+            stats["flagged_entries"] += 1
+            stats["triggered_rules"].add(entry.flagged_entry.detector_rule)
+
+    results = []
+    for src, stats in ip_stats.items():
+        # Composite score 0 - 100 based on anomaly density and error frequency
+        anomaly_ratio = stats["flagged_entries"] / max(1, stats["total_requests"])
+        error_ratio = stats["error_requests"] / max(1, stats["total_requests"])
+        rule_weight = len(stats["triggered_rules"]) * 15
+
+        composite_score = min(100, int((anomaly_ratio * 40) + (error_ratio * 25) + rule_weight + (15 if stats["flagged_entries"] > 0 else 0)))
+
+        level = "low"
+        if composite_score >= 75:
+            level = "critical"
+        elif composite_score >= 50:
+            level = "high"
+        elif composite_score >= 25:
+            level = "medium"
+
+        results.append({
+            "source": stats["source"],
+            "ip_origin": stats["ip_origin"],
+            "total_requests": stats["total_requests"],
+            "flagged_entries": stats["flagged_entries"],
+            "error_requests": stats["error_requests"],
+            "distinct_endpoints": len(stats["distinct_endpoints"]),
+            "triggered_rules": sorted(list(stats["triggered_rules"])),
+            "first_seen": stats["first_seen"],
+            "composite_score": composite_score,
+            "threat_level": level
+        })
+
+    # Order by composite_score desc
+    results.sort(key=lambda x: x["composite_score"], reverse=True)
+    return {"total": len(results), "items": results}
+
+@app.get("/api/logs/neighbors/{log_id}")
+def get_log_neighbors(log_id: int, window: int = 5, same_host: bool = True, db: Session = Depends(get_db)):
+    """
+    Fetches contextual preceding and subsequent logs around an event.
+    """
+    target = db.query(LogEntry).filter(LogEntry.id == log_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Log entry not found")
+
+    query = db.query(LogEntry)
+    if same_host and target.source:
+        query = query.filter(LogEntry.source == target.source)
+
+    preceding = (
+        query.filter(LogEntry.id < target.id)
+        .order_by(LogEntry.id.desc())
+        .limit(window)
+        .all()
+    )
+    preceding.reverse()
+
+    subsequent = (
+        query.filter(LogEntry.id > target.id)
+        .order_by(LogEntry.id.asc())
+        .limit(window)
+        .all()
+    )
+
+    combined = preceding + [target] + subsequent
+    items = []
+    for item in combined:
+        items.append({
+            "id": item.id,
+            "raw_id": item.raw_id,
+            "timestamp": item.timestamp.strftime("%Y-%m-%d %H:%M:%S") if item.timestamp else item.raw_timestamp,
+            "source": item.source,
+            "event_type": item.event_type,
+            "severity": item.severity,
+            "status": item.status,
+            "raw_message": item.raw_message,
+            "is_target": item.id == target.id
+        })
+
+    return {"target_id": log_id, "window": window, "same_host": same_host, "items": items}

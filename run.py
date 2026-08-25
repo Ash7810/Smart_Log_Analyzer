@@ -20,6 +20,7 @@ def run_app():
         host,
         "--port",
         str(port),
+        "--reload"
     ]
 
     print(f"\n>> Launching LogPulse on http://{host}:{port} ...")

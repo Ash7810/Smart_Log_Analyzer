@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -281,6 +282,40 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Log Table Pagination Controls -->
+                <div class="pagination-bar" id="logsPaginationBar">
+                    <div class="pagination-info" id="logsPaginationInfo">
+                        Showing 0 - 0 of 0 events
+                    </div>
+                    <div class="pagination-controls">
+                        <div class="page-size-selector">
+                            <label for="pageSizeSelect">Rows per page:</label>
+                            <select id="pageSizeSelect">
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value="250" selected>250</option>
+                                <option value="500">500</option>
+                                <option value="1000">1000</option>
+                            </select>
+                        </div>
+                        <div class="page-nav-group">
+                            <button class="btn btn-secondary btn-nav" id="btnFirstPage" title="First Page">
+                                <i data-lucide="chevrons-left"></i>
+                            </button>
+                            <button class="btn btn-secondary btn-nav" id="btnPrevPage" title="Previous Page">
+                                <i data-lucide="chevron-left"></i>
+                            </button>
+                            <span class="page-indicator" id="pageIndicator">Page 1 of 1</span>
+                            <button class="btn btn-secondary btn-nav" id="btnNextPage" title="Next Page">
+                                <i data-lucide="chevron-right"></i>
+                            </button>
+                            <button class="btn btn-secondary btn-nav" id="btnLastPage" title="Last Page">
+                                <i data-lucide="chevrons-right"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </section>
 

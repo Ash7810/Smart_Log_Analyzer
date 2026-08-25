@@ -455,8 +455,87 @@ code, pre, .font-mono {
 /* Table Card */
 .table-card {
     flex: 1;
-    overflow: auto;
-    max-height: calc(100vh - 200px);
+    overflow-x: auto;
+    overflow-y: auto;
+    min-height: 200px;
+    margin-bottom: 4px;
+}
+
+/* Pagination Bar */
+.pagination-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-top: 10px;
+    font-size: 13px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.pagination-info {
+    color: var(--text-muted);
+    font-size: 12.5px;
+    font-weight: 500;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.page-size-selector {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+}
+
+.page-size-selector select {
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    cursor: pointer;
+    outline: none;
+}
+
+.page-nav-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-nav {
+    padding: 5px 8px !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    height: 30px;
+}
+
+.btn-nav:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.page-indicator {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    padding: 0 6px;
+    min-width: 80px;
+    text-align: center;
 }
 
 .simple-table {
@@ -986,6 +1065,11 @@ code, pre, .font-mono {
     background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
     border-radius: 3px;
     animation: indeterminateProgress 1.4s infinite ease-in-out;
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+    display: inline-block;
 }
 
 @keyframes spin {

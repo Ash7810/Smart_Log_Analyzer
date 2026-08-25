@@ -11,6 +11,8 @@ let state = {
     filterStatus: 'all',
     threatFilterText: '',
     heatmapSlice: null, // [startTime, endTime] for time filtering
+    currentPage: 1,
+    pageSize: 250,
     neighborLogs: {
         targetId: null,
         sameHost: true,
@@ -45,18 +47,67 @@ function setupEventListeners() {
     // Search and Filters
     document.getElementById('searchInput').addEventListener('input', (e) => {
         state.filterText = e.target.value.toLowerCase();
+        state.currentPage = 1;
         renderLogsTable();
     });
 
     document.getElementById('filterSeverity').addEventListener('change', (e) => {
         state.filterSeverity = e.target.value;
+        state.currentPage = 1;
         renderLogsTable();
     });
 
     document.getElementById('filterStatus').addEventListener('change', (e) => {
         state.filterStatus = e.target.value;
+        state.currentPage = 1;
         renderLogsTable();
     });
+
+    // Pagination Controls
+    const pageSizeSelect = document.getElementById('pageSizeSelect');
+    if (pageSizeSelect) {
+        pageSizeSelect.addEventListener('change', (e) => {
+            state.pageSize = parseInt(e.target.value, 10) || 250;
+            state.currentPage = 1;
+            renderLogsTable();
+        });
+    }
+
+    const btnFirstPage = document.getElementById('btnFirstPage');
+    if (btnFirstPage) {
+        btnFirstPage.addEventListener('click', () => {
+            if (state.currentPage > 1) {
+                state.currentPage = 1;
+                renderLogsTable();
+            }
+        });
+    }
+
+    const btnPrevPage = document.getElementById('btnPrevPage');
+    if (btnPrevPage) {
+        btnPrevPage.addEventListener('click', () => {
+            if (state.currentPage > 1) {
+                state.currentPage--;
+                renderLogsTable();
+            }
+        });
+    }
+
+    const btnNextPage = document.getElementById('btnNextPage');
+    if (btnNextPage) {
+        btnNextPage.addEventListener('click', () => {
+            state.currentPage++;
+            renderLogsTable();
+        });
+    }
+
+    const btnLastPage = document.getElementById('btnLastPage');
+    if (btnLastPage) {
+        btnLastPage.addEventListener('click', () => {
+            state.currentPage = state.totalPages || 1;
+            renderLogsTable();
+        });
+    }
 
     // IP Threat Search
     const threatSearch = document.getElementById('threatSearchInput');
@@ -72,6 +123,7 @@ function setupEventListeners() {
     if (resetHeatmapBtn) {
         resetHeatmapBtn.addEventListener('click', () => {
             state.heatmapSlice = null;
+            state.currentPage = 1;
             document.querySelectorAll('.timeline-bar-col').forEach(el => el.classList.remove('active-slice'));
             renderLogsTable();
             showToast('Timeline filter reset', 'info');
@@ -266,7 +318,9 @@ function filterByHeatmapBucket(startMs, endMs, el) {
    ========================================================================= */
 function renderLogsTable() {
     const tbody = document.getElementById('logsTableBody');
+    const paginationBar = document.getElementById('logsPaginationBar');
     if (!state.logs || state.logs.length === 0) {
+        if (paginationBar) paginationBar.style.display = 'none';
         tbody.innerHTML = `
             <tr>
                 <td colspan="9" class="empty-state">
@@ -301,6 +355,7 @@ function renderLogsTable() {
     });
 
     if (filtered.length === 0) {
+        if (paginationBar) paginationBar.style.display = 'none';
         tbody.innerHTML = `
             <tr>
                 <td colspan="9" class="empty-state">
@@ -314,9 +369,17 @@ function renderLogsTable() {
         return;
     }
 
-    const maxDisplay = 250;
-    const displayList = filtered.slice(0, maxDisplay);
-    const hasMore = filtered.length > maxDisplay;
+    const totalRows = filtered.length;
+    const pageSize = state.pageSize || 250;
+    const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+    state.totalPages = totalPages;
+
+    if (state.currentPage > totalPages) state.currentPage = totalPages;
+    if (state.currentPage < 1) state.currentPage = 1;
+
+    const startIndex = (state.currentPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, totalRows);
+    const displayList = filtered.slice(startIndex, endIndex);
 
     const rowsHtml = displayList.map(log => {
         const isAnomaly = log.is_flagged;
@@ -343,15 +406,28 @@ function renderLogsTable() {
         `;
     }).join('');
 
-    const moreBanner = hasMore ? `
-        <tr>
-            <td colspan="9" style="text-align: center; background: var(--bg-subtle); color: var(--text-muted); font-size: 12px; padding: 10px;">
-                Showing first <b>${maxDisplay}</b> of <b>${filtered.length.toLocaleString()}</b> matching events. Use Search or Filters to pinpoint specific records.
-            </td>
-        </tr>
-    ` : '';
+    tbody.innerHTML = rowsHtml;
 
-    tbody.innerHTML = rowsHtml + moreBanner;
+    // Update Pagination UI
+    const paginationInfo = document.getElementById('logsPaginationInfo');
+    const pageIndicator = document.getElementById('pageIndicator');
+    const btnFirst = document.getElementById('btnFirstPage');
+    const btnPrev = document.getElementById('btnPrevPage');
+    const btnNext = document.getElementById('btnNextPage');
+    const btnLast = document.getElementById('btnLastPage');
+
+    if (paginationBar) paginationBar.style.display = 'flex';
+    if (paginationInfo) {
+        paginationInfo.innerHTML = `Showing <b>${(startIndex + 1).toLocaleString()}</b> - <b>${endIndex.toLocaleString()}</b> of <b>${totalRows.toLocaleString()}</b> events`;
+    }
+    if (pageIndicator) {
+        pageIndicator.innerText = `Page ${state.currentPage} of ${totalPages}`;
+    }
+    if (btnFirst) btnFirst.disabled = (state.currentPage <= 1);
+    if (btnPrev) btnPrev.disabled = (state.currentPage <= 1);
+    if (btnNext) btnNext.disabled = (state.currentPage >= totalPages);
+    if (btnLast) btnLast.disabled = (state.currentPage >= totalPages);
+
     lucide.createIcons();
 }
 
@@ -825,33 +901,57 @@ async function clearDatabase() {
 
 async function generateAllAiInsights() {
     const btn = document.getElementById('btnGenerateAi');
-    btn.disabled = true;
-    btn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Generating...`;
-    lucide.createIcons();
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Generating...`;
+        lucide.createIcons();
+    }
+
+    showLoader(
+        "Generating AI Insights & Root Cause Analysis...",
+        "Querying Gemini AI for threat classification, root cause diagnoses, and remediation playbooks across flagged incidents."
+    );
 
     showToast('Generating AI explanations & remediation plans...', 'info');
     try {
-        const res = await fetch('/api/explain-all?force_refresh=true', { method: 'POST' }).then(r => r.json());
-        showToast(`AI insights generated for ${res.generated_count} flagged incident(s)!`, 'success');
+        const response = await fetch('/api/explain-all?force_refresh=true', { method: 'POST' });
+        const res = await response.json();
+        if (!response.ok) {
+            throw new Error(res.error || res.detail || 'Failed to generate AI insights');
+        }
+        showToast(`AI insights generated for ${res.generated_count || 0} flagged incident(s)!`, 'success');
         await fetchDashboardData();
     } catch (err) {
-        showToast(err.message, 'error');
+        showToast(err.message || 'Error generating AI insights', 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = `<i data-lucide="sparkles"></i> Generate AI Insights`;
-        lucide.createIcons();
+        hideLoader();
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="sparkles"></i> Generate AI Insights`;
+            lucide.createIcons();
+        }
     }
 }
 
 async function refreshSingleAiExplanation(flaggedId) {
+    showLoader(
+        "Re-generating AI Root Cause Analysis...",
+        `Querying Gemini AI for incident #${flaggedId} threat breakdown and remediation plan.`
+    );
     showToast('Re-generating AI analysis...', 'info');
     try {
-        await fetch(`/api/explain/${flaggedId}?force_refresh=true`, { method: 'POST' }).then(r => r.json());
+        const response = await fetch(`/api/explain/${flaggedId}?force_refresh=true`, { method: 'POST' });
+        const res = await response.json();
+        if (!response.ok) {
+            throw new Error(res.error || res.detail || 'Failed to re-generate AI analysis');
+        }
         showToast('Updated AI insights!', 'success');
         await fetchDashboardData();
         selectIncidentById(flaggedId);
     } catch (err) {
-        showToast(err.message, 'error');
+        showToast(err.message || 'Error re-generating AI analysis', 'error');
+    } finally {
+        hideLoader();
     }
 }
 
